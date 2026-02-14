@@ -1,0 +1,12 @@
+# Arduino IDE junk
+build/
+bin/
+*.hex
+*.bin
+*.elf
+*.eep
+
+# Local config & Secrets (Never upload tokens!)
+.vscode/
+.DS_Store
+secrets.h
