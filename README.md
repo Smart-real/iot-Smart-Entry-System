@@ -1,50 +1,59 @@
-# Smart Entry & Desk Ecosystem: A Latency-Optimized IoT System
+# Distributed Room Ecosystem: Latency-Optimized Automation
 
-![System Banner](assets/system_architecture.jpg)
+![System Architecture](assets/system_architecture.jpg)
 *(Note: Replace this with your actual architecture diagram or a photo of the finished setup)*
 
 ### 🚀 Project Overview
-This project is a distributed IoT system designed to automate room lighting based on physical presence, synchronized with a desk environment. Unlike standard motion sensors, this system utilizes a **custom IR "Heartbeat" protocol** to reject ambient light interference and implements a **non-blocking architecture** to ensure instant physical response times (<50ms) even during heavy Wi-Fi activity.
+This project is a distributed IoT ecosystem designed to automate room entry, ambient lighting, and legacy hardware with sub-50ms latency. It orchestrates two microcontrollers (ESP32 & ESP8266) to create a **synchronized environment**—managing physical access via a custom Active IR Tripwire while simultaneously modernizing non-smart devices (RGB Strips) into a cohesive smart home node.
 
-**Status:** ✅ Active / Stable v2.0
+Unlike standard smart plugs, this system utilizes a **custom IR "Heartbeat" protocol** for noise-immune presence detection and implements a **non-blocking architecture** to maintain instant physical response times even during heavy Wi-Fi activity.
+
+**Status:** ✅ Active / Stable v2.1
 
 ### ⚙️ Key Features
-* **Anti-Jitter Algorithm:** Implemented a 250ms "Watchdog Timer" software filter to distinguish between solid physical obstructions and packet loss/flicker.
+* **Dual-Node Sync:** Distributed logic between Door (Receiver) and Desk (Emitter) allows the environment to react instantly to human presence.
+* **Smart Extension Hub:** Pivoted from controlling a single bulb to retrofitting a mains extension cord. This transforms the unit into a "Smart Hub," allowing modular control of multiple devices (Main Lamp, 5V RGB Drivers, Chargers) simultaneously.
+* **Legacy Hardware Modernization:** Automated "State Recovery" logic overrides the chaotic default flash modes of cheap RGB strips on boot, restoring user presets (Purple/Solid) without physical remotes.
 * **Hardware-Level PWM:** Offloaded 38kHz IR signal generation to the ESP8266 hardware timer, decoupling signal stability from CPU load (Wi-Fi/Blynk tasks).
-* **Over-The-Air (OTA) Updates:** Engineered a wireless update pipeline to bypass physical hardware limitations (broken USB data lines) and enable remote maintenance.
-* **Dual-Control Logic:** "2-Way Switch" architecture allowing simultaneous control via physical wall buttons and the Blynk IoT cloud.
+* **Anti-Jitter Algorithm:** Implemented a "Smart Latch" timer to distinguish between a lingering person and a re-entry event.
 
 ### 🔧 Engineering Journey & Technical Challenges
 
 #### 1. The Sensor Evolution (PIR vs. Active IR)
-The project began as a feasibility study to understand relay logic and pinout configurations, with the initial intention of using Passive Infrared (PIR) motion sensors. However, early testing revealed significant limitations with standard PIR sensors for this specific use case (latency and broad detection zones). 
+The project began as a feasibility study to understand relay logic, initially intending to use Passive Infrared (PIR) sensors. However, testing revealed significant latency and broad detection zones unsuitable for a precise "Tripwire."
 
-I pivoted to an **Active IR Tripwire** mechanism, initially testing with standard IR photodiodes.
-* **Problem:** Standard photodiodes were hypersensitive to ambient noise (sunlight, heat sources), causing constant false triggers.
-* **Solution:** I upgraded to **TSOP-style receivers** (VS1838B) which contain internal gain control and band-pass filters.
+I pivoted to an **Active IR Tripwire** mechanism:
+* **Problem:** Standard photodiodes were hypersensitive to ambient noise (sunlight), causing false triggers.
+* **Solution:** Upgraded to **TSOP-style receivers** (VS1838B) with internal gain control and band-pass filters.
 
 #### 2. The "Continuous Signal" Fallacy
-A major technical hurdle involved the behavior of the TSOP receiver.
-* **The Bug:** I initially drove the IR Emitter with a continuous DC signal (Always ON), expecting a constant HIGH/LOW state. The system failed to trigger reliably for over 5 hours of debugging.
-* **The Discovery:** I realized that TSOP receivers are designed for *burst* communication (like TV remotes) and will actively filter out continuous signals as "interference" after a few seconds.
-* **The Fix:** I re-engineered the emitter logic to generate **modulated 38kHz packets**. By pulsing the emitter at the carrier frequency native to the receiver, I established a stable link that only breaks upon physical obstruction.
+A major hurdle involved the TSOP receiver logic.
+* **The Bug:** Driving the IR Emitter with a continuous DC signal failed because TSOP receivers are designed to filter out non-modulated signals as "interference."
+* **The Fix:** Re-engineered the emitter logic to generate **modulated 38kHz packets**, establishing a stable link that only breaks upon physical obstruction.
 
-#### 3. Signal Debouncing & Human Patterns
-Reliable detection required software-level filtering to match human movement patterns.
-* **The "Double Trigger" Issue:** A person walking through the beam has two legs, which caused the sensor to register two distinct "breaks" (Trigger ON -> OFF -> ON -> OFF) within milliseconds, toggling the light incorrectly.
-* **The Optimization:** I implemented a **non-blocking cooldown timer (200ms - 500ms)**. This window ignores the micro-gap between walking legs, treating the entire passage as a single valid event.
+#### 3. The "Resource War" (Tripwire vs. RGB Control)
+Integrating the Desk Underglow created a critical resource conflict.
+* **The Conflict:** The ESP8266 has limited hardware timers. Generating the continuous 38kHz tripwire signal (`analogWrite`) clashed with the precise timing required to send NEC IR codes (`IRremote`) to the LED strip, causing the lights to lag or fail.
+* **The Optimization:** Implemented a **"Mutex" (Mutual Exclusion)** strategy. The system briefly pauses the 38kHz carrier wave (~50ms) to transmit LED color commands cleanly, then immediately resumes the tripwire. This ensures reliable lighting control without compromising security.
 
-#### 4. Hardware Integration
-* **High-Voltage Isolation:** The system controls a custom-modified extension cord via a 5V Relay Module.
-* **Soldering & Safety:** Extensive soldering was required to bridge the logic-level ESP32/ESP8266 controllers with mains-voltage appliances, ensuring safe and robust connections for the "Smart Extension" hub.
+#### 4. Design Pivot: The "Smart Hub" Architecture
+Early iterations focused on a custom enclosure for a single light bulb. I realized this lacked scalability and utility relative to the engineering effort.
+* **The Pivot:** I retrofitted a standard AC extension cord by placing the Relay Module inline with the main input Live rail.
+* **The Result:** A scalable IoT node that can control any plugged-in device, future-proofing the system for additional peripherals (chargers, heaters, etc.) without hardware redesigns.
 
 ![Relay Wiring](assets/relay_wiring_internals.jpg)
 *(Note: Upload a photo of your relay soldering/wiring to your assets folder)*
 
 ### 🛠️ Hardware Architecture
-* **Door Controller (Receiver):** ESP32 DevKit V1 + VS1838B IR Receiver + 5V Relay
-* **Desk Controller (Emitter):** NodeMCU (ESP8266) + IR LED (940nm) + WS2812B LED Strip
-* **Protocol:** 38kHz NEC Carrier Wave (Continuous Beam)
+* **Door Node (Receiver):**
+    * **Core:** ESP32 DevKit V1
+    * **Sensors:** VS1838B IR Receiver (3.3V Logic)
+    * **Actuators:** 5V Relay Module (Transistor Buffered)
+* **Desk Node (Emitter & Controller):**
+    * **Core:** NodeMCU (ESP8266)
+    * **Emitters:** 940nm High-Power IR LED (Driven via 2N2222 Transistor on 5V Rail)
+    * **Legacy Control:** IR Emitter (for RGB Strip control)
+* **Protocol:** 38kHz NEC Carrier Wave (Continuous)
 
 ### 🔌 Circuit Diagram
 ![Circuit Diagram](schematics/wiring_diagram.png)
@@ -52,23 +61,11 @@ Reliable detection required software-level filtering to match human movement pat
 
 > The system uses a transistor-buffered relay circuit to protect the ESP32 GPIO pins from inductive flyback voltage.
 
-### 💻 Software Logic
-The core challenge was preventing "blocking code" (Wi-Fi connection attempts) from freezing the sensor loop.
-
-**The Solution:**
-1.  **Boot Priority:** The system initializes physical sensors immediately (0ms delay), moving Wi-Fi connection to a background non-blocking task.
-2.  **Signal Filtering:**
-    ```cpp
-    // Simplified logic for noise rejection
-    if (signal_lost_duration > 250ms) {
-       trigger_lights(); // Only act on confirmed presence
-    }
-    ```
-
 ### 📱 IoT Integration (Blynk)
-* **V0:** Main Light Toggle (Synced with Relay)
-* **V1:** System Lock (Disables sensor for "Party Mode")
-* **Automation:** When Door Light turns ON -> Desk Underglow turns ON (Cloud Sync).
+* **V0:** Main Room Light (Synced with physical beam break)
+* **V1:** "Party Mode" Lock (Disables automatic sensors)
+* **V2:** Desk RGB Color Selector (Injects NEC Codes)
+* **Automation:** When Door Light turns ON -> Desk Underglow syncs state automatically.
 
 ---
 ### 📜 License
